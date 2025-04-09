@@ -7,21 +7,15 @@ services:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=admin
-      - MONGO_INITDB_ROOT_PASSWORD=password
-    restart: always
 
   bug-tracker:
     build: .
     ports:
       - "8000:8000"
     environment:
-      - MONGODB_URL=mongodb://admin:password@mongodb:27017
+      - MONGODB_URL=mongodb://mongodb:27017
     depends_on:
       - mongodb
-    restart: always
 
 volumes:
-  mongodb_data:
-    driver: local 
+  mongodb_data: 
