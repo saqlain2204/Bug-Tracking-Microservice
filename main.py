@@ -9,13 +9,14 @@ import os
 app = FastAPI()
 
 # MongoDB setup
-mongodb_url = os.getenv("MONGODB_URL", "mongodb://admin:password@localhost:27017")
+mongodb_url = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
 client = MongoClient(mongodb_url)
+db = client["bugtracker_db"]  # Use a specific DB
 
-# Helper function to get database for a specific group
-def get_group_db(group_id: str):
-    db_name = f"bugtracker_group_{group_id}"
-    return client[db_name]
+employee_collection = db["employee_collection"]
+bug_collection = db["bug_collection"]
+manager_collection = db["manager_collection"]
+client_collection = db["client_collection"]
 
 # Helper to serialize ObjectId
 def serialize_doc(doc):
@@ -51,10 +52,8 @@ async def root():
 
 # --------------------- CLIENT ---------------------
 
-@app.post("/{group_id}/client/bugs/create")
-async def create_bug(group_id: str, bug: Bug):
-    db = get_group_db(group_id)
-    bug_collection = db["bug_collection"]
+@app.post("/client/bugs/create")
+async def create_bug(bug: Bug):
     bug_collection.insert_one(bug.model_dump())
     if bug_collection.find_one({"bug_id": bug.bug_id}):
         return {"message": "Bug created successfully"}
@@ -62,10 +61,8 @@ async def create_bug(group_id: str, bug: Bug):
 
 # --------------------- MANAGER ---------------------
 
-@app.post("/{group_id}/manager/client/create")
-async def create_client(group_id: str, client_data: Client):
-    db = get_group_db(group_id)
-    client_collection = db["client_collection"]
+@app.post("/manager/client/create")
+async def create_client(client_data: Client):
     if client_collection.find_one({"client_id": client_data.client_id}):
         return {"message": "Client already exists"}
     client_collection.insert_one(client_data.model_dump())
@@ -73,33 +70,24 @@ async def create_client(group_id: str, client_data: Client):
         return {"message": "Client created successfully"}
     return {"message": "Client creation failed"}
 
-@app.post("/{group_id}/manager/employee/create")
-async def create_employee(group_id: str, employee: Employee):
-    db = get_group_db(group_id)
-    employee_collection = db["employee_collection"]
+@app.post("/manager/employee/create")
+async def create_employee(employee: Employee):
     if employee_collection.find_one({"employee_id": employee.employee_id}):
         return {"message": "Employee already exists"}
     employee_collection.insert_one(employee.model_dump())
     return {"message": "Employee created successfully"}
 
-@app.get("/{group_id}/manager/employees")
-async def list_employees(group_id: str):
-    db = get_group_db(group_id)
-    employee_collection = db["employee_collection"]
+@app.get("/manager/employees")
+async def list_employees():
     return [serialize_doc(emp) for emp in employee_collection.find()]
 
-@app.get("/{group_id}/manager/clients")
-async def list_clients(group_id: str):
-    db = get_group_db(group_id)
-    client_collection = db["client_collection"]
+
+@app.get("/manager/clients")
+async def list_clients():
     return [serialize_doc(client) for client in client_collection.find()]
 
-@app.post("/{group_id}/manager/bugs/assign")
-async def assign_bug(group_id: str, bug_id: str, employee_id: str):
-    db = get_group_db(group_id)
-    bug_collection = db["bug_collection"]
-    employee_collection = db["employee_collection"]
-    
+@app.post("/manager/bugs/assign")
+async def assign_bug(bug_id: str, employee_id: str):
     if bug_collection.find_one({"bug_id": bug_id}):
         bug_collection.update_one(
             {"bug_id": bug_id},
@@ -112,38 +100,27 @@ async def assign_bug(group_id: str, bug_id: str, employee_id: str):
         return {"message": "Bug assigned successfully"}
     return {"message": "Bug assignment failed"}
 
-@app.get("/{group_id}/manager/bugs")
-async def list_bugs(group_id: str):
-    db = get_group_db(group_id)
-    bug_collection = db["bug_collection"]
+
+@app.get("/manager/bugs")
+async def list_bugs():
     return [serialize_doc(bug) for bug in bug_collection.find()]
 
 # --------------------- EMPLOYEE ---------------------
 
-@app.get("/{group_id}/employee/{employee_id}/bugs")
-async def list_employee_bugs(group_id: str, employee_id: str):
-    db = get_group_db(group_id)
-    bug_collection = db["bug_collection"]
+@app.get("/employee/{employee_id}/bugs")
+async def list_employee_bugs(employee_id: str):
     return [serialize_doc(bug) for bug in bug_collection.find({"employee_id": employee_id})]
 
-@app.get("/{group_id}/employee/{employee_id}/bugs/completed")
-async def list_completed_bugs(group_id: str, employee_id: str):
-    db = get_group_db(group_id)
-    bug_collection = db["bug_collection"]
+@app.get("/employee/{employee_id}/bugs/completed")
+async def list_completed_bugs(employee_id: str):
     return [serialize_doc(bug) for bug in bug_collection.find({"employee_id": employee_id, "status": "Completed"})]
 
-@app.get("/{group_id}/employee/{employee_id}/bugs/pending")
-async def list_pending_bugs(group_id: str, employee_id: str):
-    db = get_group_db(group_id)
-    bug_collection = db["bug_collection"]
+@app.get("/employee/{employee_id}/bugs/pending")
+async def list_pending_bugs(employee_id: str):
     return [serialize_doc(bug) for bug in bug_collection.find({"employee_id": employee_id, "status": "Pending"})]
 
-@app.post("/{group_id}/employee/{employee_id}/bugs/update")
-async def update_bug_status(group_id: str, employee_id: str, bug_id: str, status: str):
-    db = get_group_db(group_id)
-    bug_collection = db["bug_collection"]
-    employee_collection = db["employee_collection"]
-    
+@app.post("/employee/{employee_id}/bugs/update")
+async def update_bug_status(employee_id: str, bug_id: str, status: str):
     bug_collection.update_one(
         {"bug_id": bug_id, "employee_id": employee_id},
         {"$set": {"status": status}}
@@ -157,4 +134,4 @@ async def update_bug_status(group_id: str, employee_id: str, bug_id: str, status
 # --------------------- MAIN ---------------------
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
